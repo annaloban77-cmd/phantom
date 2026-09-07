@@ -3,7 +3,7 @@ package handshake
 import (
 	"bytes"
 	"crypto/rand"
-	"io"
+	"net"
 	"testing"
 	"time"
 
@@ -314,6 +314,8 @@ func TestWrongPSK(t *testing.T) {
 		if err == nil {
 			t.Error("server should reject wrong PSK")
 		}
+		// Server closes connection on auth failure
+		serverConn.Close()
 	}()
 
 	_, _, err := ClientHandshake(clientConn, wrongPSK)
@@ -331,8 +333,10 @@ func TestTimestampReject(t *testing.T) {
 
 	// Create custom ClientHello with expired timestamp
 	clientConn, serverConn := netPipe()
+	defer clientConn.Close()
+	defer serverConn.Close()
 
-	// Write ClientHello with old timestamp
+	// Write ClientHello with old timestamp (3 min ago, > 120s limit)
 	var pubKey [32]byte
 	var nonce [16]byte
 	rand.Read(pubKey[:])
@@ -341,13 +345,13 @@ func TestTimestampReject(t *testing.T) {
 	ch := &ClientHello{
 		Type:      uint16(common.HsClientHello),
 		PubKey:    pubKey,
-		Timestamp: uint64(time.Now().Add(-2 * time.Minute).UnixMilli()), // 2 min ago
+		Timestamp: uint64(time.Now().Add(-3 * time.Minute).UnixMilli()), // 3 min ago
 		Nonce:     nonce,
 	}
 	chBuf := MarshalClientHello(ch)
 	clientConn.Write(chBuf)
 
-	// Server should reject
+	// Server should reject immediately after reading ClientHello
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -356,31 +360,43 @@ func TestTimestampReject(t *testing.T) {
 			t.Errorf("expected ErrTimestampExpired, got %v", err)
 		}
 	}()
-	<-done
+
+	// Wait for server to finish (should be immediate since timestamp is invalid)
+	timeout := time.After(5 * time.Second)
+	select {
+	case <-done:
+		// Success - server rejected quickly
+	case <-timeout:
+		t.Fatal("test timeout - server didn't reject expired timestamp")
+	}
 }
 
 // Helper function to create bidirectional pipe
-func netPipe() (io.ReadWriter, io.ReadWriter) {
-	// Using simple pipe for testing
-	r1, w1 := io.Pipe()
-	r2, w2 := io.Pipe()
+func netPipe() (net.Conn, net.Conn) {
+	// Use TCP listener on localhost for realistic testing
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		panic(err)
+	}
 
-	c1 := &pipeConn{r: r1, w: w2}
-	c2 := &pipeConn{r: r2, w: w1}
+	var serverConn net.Conn
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		var err error
+		serverConn, err = listener.Accept()
+		if err != nil {
+			panic(err)
+		}
+	}()
 
-	return c1, c2
-}
+	clientConn, err := net.Dial("tcp", listener.Addr().String())
+	if err != nil {
+		listener.Close()
+		panic(err)
+	}
 
-// pipeConn implements io.ReadWriter for testing
-type pipeConn struct {
-	r *io.PipeReader
-	w *io.PipeWriter
-}
-
-func (p *pipeConn) Read(b []byte) (int, error) {
-	return p.r.Read(b)
-}
-
-func (p *pipeConn) Write(b []byte) (int, error) {
-	return p.w.Write(b)
+	<-done
+	listener.Close()
+	return clientConn, serverConn
 }
