@@ -1,112 +1,27 @@
 ```
-# Go build artifacts
+# Compiled and build artifacts
 *.o
-*.a
-*.so
-*.dylib
-*.dll
-*.exe
-
-# Go test and coverage
-*.test
-*.prof
-coverage.out
-cover/
-
-# Go tools
-go.mod.bak
-go.sum.bak
+*.obj
+*.out
 
 # Dependencies
 vendor/
 
-# Build directories
-bin/
-pkg/
-target/
-
-# Logs
+# Logs and temp files
 *.log
-
-# Environment
-.env
-.env.local
-.env.*
+*.tmp
 
 # Editors
 .vscode/
 .idea/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
 
 # Coverage
 coverage/
 htmlcov/
 .coverage
 
-# Python (if co-existing)
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
-venv/
-.venv/
-pip-log.txt
-pip-delete-this-directory.txt
-.tox/
-.coverage*
-.nox/
-.pytest_cache/
-.mypy_cache/
-
-# Node (if co-existing)
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-node_modules/
-dist/
-build/
-*.min.js
-*.min.css
-
-# Java (if co-existing)
-*.class
-*.jar
-*.war
-*.ear
-*.nar
-target/
-.gradle/
-build/
-
-# Compression
-*.zip
-*.gz
-*.tar
-*.tgz
-*.bz2
-*.xz
-*.7z
-*.rar
-*.zst
-*.lz4
-*.lzh
-*.cab
-*.arj
-*.rpm
-*.deb
-*.Z
-*.lz
-*.lzo
-*.tar.gz
-*.tar.bz2
-*.tar.xz
-*.tar.zst
+# Environment
+.env
+.env.local
+*.env.*
 ```
