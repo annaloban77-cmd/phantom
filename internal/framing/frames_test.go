@@ -1,11 +1,8 @@
 package framing
 
 import (
-	"errors"
 	"testing"
 )
-
-var ErrInvalidFrameSize = errors.New("invalid frame size")
 
 func TestFrameHeaderMarshal(t *testing.T) {
 	h := &FrameHeader{

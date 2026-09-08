@@ -1,37 +1,29 @@
 ```
 # Compiled and build artifacts
-*.pyc
-__pycache__/
 *.o
 *.obj
 *.out
-build/
-dist/
-target/
 
 # Dependencies
-node_modules/
-venv/
-.venv/
-.env
-.env.local
-.env.*
+vendor/
 
 # Logs and temp files
 *.log
 *.tmp
-*.swp
 
-# Editors
-.vscode/
-.idea/
+# Environment
+.env
+.env.local
+*.env.*
 
 # Coverage
+.coverage
 coverage/
 htmlcov/
-.coverage
 
-# System
-.DS_Store
-Thumbs.db
+# Go-specific
+*.test
+*.prof
+go.mod
+go.sum
 ```
