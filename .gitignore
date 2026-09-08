@@ -1,11 +1,6 @@
 ```
-# Compiled and build artifacts
-*.o
-*.obj
-*.out
-
 # Dependencies
-vendor/
+go/pkg/
 
 # Logs and temp files
 *.log
@@ -16,14 +11,11 @@ vendor/
 .env.local
 *.env.*
 
-# Coverage
-.coverage
-coverage/
-htmlcov/
+# Editors
+.vscode/
+.idea/
 
-# Go-specific
-*.test
-*.prof
-go.mod
-go.sum
+# OS generated files
+.DS_Store
+Thumbs.db
 ```
