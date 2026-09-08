@@ -2,8 +2,11 @@ package framing
 
 import (
 	"encoding/binary"
+	"errors"
 	"math/rand"
 )
+
+var ErrInvalidFrameSize = errors.New("invalid frame size")
 
 type FrameType uint8
 

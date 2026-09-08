@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"sync"
@@ -13,7 +12,6 @@ import (
 	"time"
 
 	"github.com/phantom-tunnel/phantom/internal/common"
-	"github.com/phantom-tunnel/phantom/internal/crypto"
 	utls "github.com/refraction-networking/utls"
 )
 
@@ -96,7 +94,10 @@ func TestDialModeAFullHandshake(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	spec := utls.HelloChrome_Auto.ToSpec()
+	spec, err := utls.UTLSIdToSpec(utls.HelloChrome_Auto)
+	if err != nil {
+		t.Fatalf("UTLSIdToSpec failed: %v", err)
+	}
 	conn, err := DialModeA(ctx, server.Addr(), psk, &spec)
 	if err != nil {
 		t.Fatalf("DialModeA failed: %v", err)
@@ -139,7 +140,10 @@ func TestDialModeAMultipleMessages(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	spec := utls.HelloChrome_Auto.ToSpec()
+	spec, err := utls.UTLSIdToSpec(utls.HelloChrome_Auto)
+	if err != nil {
+		t.Fatalf("UTLSIdToSpec failed: %v", err)
+	}
 	conn, err := DialModeA(ctx, server.Addr(), psk, &spec)
 	if err != nil {
 		t.Fatalf("DialModeA failed: %v", err)
@@ -189,7 +193,10 @@ func TestDialModeAConcurrentAccess(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	spec := utls.HelloChrome_Auto.ToSpec()
+	spec, err := utls.UTLSIdToSpec(utls.HelloChrome_Auto)
+	if err != nil {
+		t.Fatalf("UTLSIdToSpec failed: %v", err)
+	}
 	conn, err := DialModeA(ctx, server.Addr(), psk, &spec)
 	if err != nil {
 		t.Fatalf("DialModeA failed: %v", err)
@@ -250,7 +257,10 @@ func TestDialModeALargeData(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	spec := utls.HelloChrome_Auto.ToSpec()
+	spec, err := utls.UTLSIdToSpec(utls.HelloChrome_Auto)
+	if err != nil {
+		t.Fatalf("UTLSIdToSpec failed: %v", err)
+	}
 	conn, err := DialModeA(ctx, server.Addr(), psk, &spec)
 	if err != nil {
 		t.Fatalf("DialModeA failed: %v", err)
@@ -302,7 +312,10 @@ func TestDialModeAWrongPSK(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	spec := utls.HelloChrome_Auto.ToSpec()
+	spec, err := utls.UTLSIdToSpec(utls.HelloChrome_Auto)
+	if err != nil {
+		t.Fatalf("UTLSIdToSpec failed: %v", err)
+	}
 	_, err = DialModeA(ctx, server.Addr(), wrongPSK, &spec)
 	if err == nil {
 		t.Fatal("expected error with wrong PSK, got nil")
@@ -325,7 +338,10 @@ func TestDialModeABadSessionConfirm(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	spec := utls.HelloChrome_Auto.ToSpec()
+	spec, err := utls.UTLSIdToSpec(utls.HelloChrome_Auto)
+	if err != nil {
+		t.Fatalf("UTLSIdToSpec failed: %v", err)
+	}
 	conn, err := DialModeA(ctx, server.Addr(), psk, &spec)
 	if err != nil {
 		t.Fatalf("DialModeA failed: %v", err)
@@ -354,7 +370,10 @@ func TestDialModeAMessageTypes(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	spec := utls.HelloChrome_Auto.ToSpec()
+	spec, err := utls.UTLSIdToSpec(utls.HelloChrome_Auto)
+	if err != nil {
+		t.Fatalf("UTLSIdToSpec failed: %v", err)
+	}
 	conn, err := DialModeA(ctx, server.Addr(), psk, &spec)
 	if err != nil {
 		t.Fatalf("DialModeA failed: %v", err)
@@ -404,7 +423,10 @@ func TestDialModeAClose(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	spec := utls.HelloChrome_Auto.ToSpec()
+	spec, err := utls.UTLSIdToSpec(utls.HelloChrome_Auto)
+	if err != nil {
+		t.Fatalf("UTLSIdToSpec failed: %v", err)
+	}
 	conn, err := DialModeA(ctx, server.Addr(), psk, &spec)
 	if err != nil {
 		t.Fatalf("DialModeA failed: %v", err)
@@ -436,7 +458,10 @@ func TestPacketRoundTripWithMock(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	spec := utls.HelloChrome_Auto.ToSpec()
+	spec, err := utls.UTLSIdToSpec(utls.HelloChrome_Auto)
+	if err != nil {
+		t.Fatalf("UTLSIdToSpec failed: %v", err)
+	}
 	conn, err := DialModeA(ctx, server.Addr(), psk, &spec)
 	if err != nil {
 		t.Fatalf("DialModeA failed: %v", err)
@@ -478,7 +503,10 @@ func TestPacketTooLargeWithMock(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	spec := utls.HelloChrome_Auto.ToSpec()
+	spec, err := utls.UTLSIdToSpec(utls.HelloChrome_Auto)
+	if err != nil {
+		t.Fatalf("UTLSIdToSpec failed: %v", err)
+	}
 	conn, err := DialModeA(ctx, server.Addr(), psk, &spec)
 	if err != nil {
 		t.Fatalf("DialModeA failed: %v", err)
@@ -502,10 +530,13 @@ func TestDialModeAConnectionRefused(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	spec := utls.HelloChrome_Auto.ToSpec()
-	_, err := DialModeA(ctx, "127.0.0.1:1", psk, &spec) // Порт 1 обычно закрыт
-	if err == nil {
-		t.Fatal("expected error for connection refused")
+	spec, err := utls.UTLSIdToSpec(utls.HelloChrome_Auto)
+	if err != nil {
+		t.Fatalf("UTLSIdToSpec failed: %v", err)
+	}
+	_, err2 := DialModeA(ctx, "127.0.0.1:1", psk, &spec) // Порт 1 обычно закрыт
+	if err2 == nil {
+		t.Fatal("expected err2or for connection refused")
 	}
 }
 
