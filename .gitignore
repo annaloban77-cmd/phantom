@@ -1,15 +1,26 @@
 ```
 # Compiled and build artifacts
+*.pyc
+__pycache__/
 *.o
 *.obj
 *.out
+build/
+dist/
+target/
 
 # Dependencies
-vendor/
+node_modules/
+venv/
+.venv/
+.env
+.env.local
+.env.*
 
 # Logs and temp files
 *.log
 *.tmp
+*.swp
 
 # Editors
 .vscode/
@@ -20,8 +31,7 @@ coverage/
 htmlcov/
 .coverage
 
-# Environment
-.env
-.env.local
-*.env.*
+# System
+.DS_Store
+Thumbs.db
 ```
