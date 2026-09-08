@@ -49,10 +49,10 @@ func UnmarshalFrameHeader(data []byte) (*FrameHeader, error) {
 }
 
 type Framer struct {
-	rng               *rand.Rand
-	streamID          uint32
-	dataSinceHeaders  int
-	headerPaths       []string
+	rng              *rand.Rand
+	streamID         uint32
+	dataSinceHeaders int
+	headerPaths      []string
 }
 
 var headerPaths = []string{
@@ -112,14 +112,14 @@ func (f *Framer) GenerateHeaders() []byte {
 	// First byte 0x82 (indexed :method GET)
 	// Second byte 0x84 (indexed :path /)
 	content := []byte{0x82, 0x84}
-	
+
 	// Add authority and scheme
 	content = append(content, 0x87) // :scheme https
 	content = append(content, 0x83) // :authority indexed
-	
+
 	// Add path (simplified - just append bytes)
 	content = append(content, []byte(path)...)
-	
+
 	// Add random padding to reach target size
 	for len(content) < targetSize-9 {
 		content = append(content, byte(f.rng.Intn(256)))
@@ -145,15 +145,15 @@ func (f *Framer) GenerateSettings() []byte {
 	// Settings payload: MAX_CONCURRENT_STREAMS=100, INITIAL_WINDOW_SIZE=6291456, ENABLE_PUSH=0
 	// Each setting: 2B ID + 4B value = 6B, 3 settings = 18B
 	settings := make([]byte, 0, 18)
-	
+
 	// ENABLE_PUSH (0x2) = 0
 	settings = append(settings, 0x00, 0x02)
 	settings = append(settings, 0x00, 0x00, 0x00, 0x00)
-	
+
 	// MAX_CONCURRENT_STREAMS (0x3) = 100
 	settings = append(settings, 0x00, 0x03)
 	settings = append(settings, 0x00, 0x00, 0x00, 0x64)
-	
+
 	// INITIAL_WINDOW_SIZE (0x4) = 6291456
 	settings = append(settings, 0x00, 0x04)
 	settings = append(settings, 0x00, 0x60, 0x00, 0x00)

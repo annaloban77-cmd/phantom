@@ -4,12 +4,12 @@ import "time"
 
 // ServerConfig holds server configuration
 type ServerConfig struct {
-	Listen        string            `yaml:"listen"`
-	TLS           TLSConfig         `yaml:"tls"`
-	MasqueradeSite string           `yaml:"masquerade_site"`
-	RateLimit     int               `yaml:"rate_limit"`
-	Auth          AuthConfig        `yaml:"auth"`
-	Logging       LoggingConfig     `yaml:"logging"`
+	Listen         string        `yaml:"listen"`
+	TLS            TLSConfig     `yaml:"tls"`
+	MasqueradeSite string        `yaml:"masquerade_site"`
+	RateLimit      int           `yaml:"rate_limit"`
+	Auth           AuthConfig    `yaml:"auth"`
+	Logging        LoggingConfig `yaml:"logging"`
 }
 
 // TLSConfig holds TLS certificate configuration
@@ -37,20 +37,20 @@ type LoggingConfig struct {
 
 // ClientConfig holds client configuration
 type ClientConfig struct {
-	Server   string            `yaml:"server"`
-	PSK      string            `yaml:"psk"`
-	Transport TransportConfig  `yaml:"transport"`
-	Local     LocalConfig      `yaml:"local"`
-	Evasion   EvasionConfig    `yaml:"evasion"`
-	Behavior  BehaviorConfig   `yaml:"behavior"`
-	Logging   LoggingConfig    `yaml:"logging"`
+	Server    string          `yaml:"server"`
+	PSK       string          `yaml:"psk"`
+	Transport TransportConfig `yaml:"transport"`
+	Local     LocalConfig     `yaml:"local"`
+	Evasion   EvasionConfig   `yaml:"evasion"`
+	Behavior  BehaviorConfig  `yaml:"behavior"`
+	Logging   LoggingConfig   `yaml:"logging"`
 }
 
 // TransportConfig holds transport mode configuration
 type TransportConfig struct {
-	Mode        string `yaml:"mode"`
-	CFEndpoint  string `yaml:"cf_endpoint"`
-	ProxyURL    string `yaml:"proxy_url"`
+	Mode       string `yaml:"mode"`
+	CFEndpoint string `yaml:"cf_endpoint"`
+	ProxyURL   string `yaml:"proxy_url"`
 }
 
 // LocalConfig holds local listener configuration
@@ -61,17 +61,17 @@ type LocalConfig struct {
 
 // EvasionConfig holds evasion configuration
 type EvasionConfig struct {
-	Enable       bool     `yaml:"enable"`
-	RetryDelayMs []int    `yaml:"retry_delay_ms"`
-	MaxRetries   int      `yaml:"max_retries"`
-	CertSPKIPin  string   `yaml:"cert_spki_pin"`
+	Enable       bool   `yaml:"enable"`
+	RetryDelayMs []int  `yaml:"retry_delay_ms"`
+	MaxRetries   int    `yaml:"max_retries"`
+	CertSPKIPin  string `yaml:"cert_spki_pin"`
 }
 
 // BehaviorConfig holds traffic behavior configuration
 type BehaviorConfig struct {
-	IdlePolicy       IdlePolicyConfig       `yaml:"idle_policy"`
+	IdlePolicy        IdlePolicyConfig        `yaml:"idle_policy"`
 	SessionResumption SessionResumptionConfig `yaml:"session_resumption"`
-	ConnectionReuse  ConnectionReuseConfig  `yaml:"connection_reuse"`
+	ConnectionReuse   ConnectionReuseConfig   `yaml:"connection_reuse"`
 }
 
 // IdlePolicyConfig holds idle traffic policy
@@ -85,14 +85,14 @@ type IdlePolicyConfig struct {
 
 // SessionResumptionConfig holds session resumption settings
 type SessionResumptionConfig struct {
-	Enabled          bool `yaml:"enabled"`
-	CacheSize        int  `yaml:"cache_size"`
+	Enabled          bool    `yaml:"enabled"`
+	CacheSize        int     `yaml:"cache_size"`
 	ReuseProbability float64 `yaml:"reuse_probability"`
 }
 
 // ConnectionReuseConfig holds connection reuse settings
 type ConnectionReuseConfig struct {
-	MaxLifetime   time.Duration `yaml:"max_lifetime"`
-	MaxRequests   int           `yaml:"max_requests"`
-	CloseTimeout  time.Duration `yaml:"close_timeout"`
+	MaxLifetime  time.Duration `yaml:"max_lifetime"`
+	MaxRequests  int           `yaml:"max_requests"`
+	CloseTimeout time.Duration `yaml:"close_timeout"`
 }

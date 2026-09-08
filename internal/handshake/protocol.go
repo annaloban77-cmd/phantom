@@ -13,12 +13,12 @@ import (
 )
 
 var (
-	ErrInvalidMessage     = errors.New("invalid handshake message")
-	ErrReplayDetected     = errors.New("replay attack detected")
-	ErrTimestampExpired   = errors.New("client timestamp expired")
-	ErrAuthFailed         = errors.New("authentication failed")
-	ErrRateLimited        = errors.New("rate limit exceeded")
-	ErrHandshakeTimeout   = errors.New("handshake timeout")
+	ErrInvalidMessage   = errors.New("invalid handshake message")
+	ErrReplayDetected   = errors.New("replay attack detected")
+	ErrTimestampExpired = errors.New("client timestamp expired")
+	ErrAuthFailed       = errors.New("authentication failed")
+	ErrRateLimited      = errors.New("rate limit exceeded")
+	ErrHandshakeTimeout = errors.New("handshake timeout")
 )
 
 // PSKUser представляет пользователя с pre-shared key

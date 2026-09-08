@@ -27,17 +27,17 @@ func TestDialModeAInvalidAddress(t *testing.T) {
 func TestPacketRoundTrip(t *testing.T) {
 	// This test requires a full client-server setup
 	// For unit testing, we just verify the framing logic
-	
+
 	payload := []byte("test message")
 	msgType := common.MsgData
 
 	// Build plaintext
 	plaintext := append([]byte{byte(msgType)}, payload...)
-	
+
 	if len(plaintext) != len(payload)+1 {
 		t.Fatalf("plaintext size mismatch: %d vs %d", len(plaintext), len(payload)+1)
 	}
-	
+
 	if plaintext[0] != byte(msgType) {
 		t.Errorf("msgType not at position 0")
 	}
@@ -45,12 +45,12 @@ func TestPacketRoundTrip(t *testing.T) {
 
 func TestPacketTooLarge(t *testing.T) {
 	maxPayload := common.MaxPacketSize - 4 - 16 // length + tag
-	
+
 	oversized := make([]byte, maxPayload+1)
 	if len(oversized) <= maxPayload {
 		t.Fatal("oversized payload construction failed")
 	}
-	
+
 	// Verify that this would be rejected
 	if len(oversized) > maxPayload {
 		// Expected behavior

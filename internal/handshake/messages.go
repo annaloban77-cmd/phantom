@@ -9,28 +9,28 @@ import (
 
 // ClientHello представляет первое сообщение клиента
 type ClientHello struct {
-	Type      uint16 // 0x0001
+	Type      uint16   // 0x0001
 	PubKey    [32]byte // X25519 public key
-	Timestamp uint64 // milliseconds since epoch
+	Timestamp uint64   // milliseconds since epoch
 	Nonce     [16]byte // random nonce
 }
 
 // ServerHello представляет ответ сервера
 type ServerHello struct {
-	Type   uint16 // 0x0002
+	Type   uint16   // 0x0002
 	PubKey [32]byte // X25519 public key
 	Nonce  [16]byte // random nonce
 }
 
 // ClientProof представляет доказательство клиента
 type ClientProof struct {
-	Type uint16 // 0x0003
+	Type uint16   // 0x0003
 	HMAC [32]byte // HMAC-SHA256
 }
 
 // SessionConfirm представляет подтверждение сессии
 type SessionConfirm struct {
-	Type uint16 // 0x0004
+	Type uint16   // 0x0004
 	HMAC [32]byte // HMAC-SHA256
 }
 

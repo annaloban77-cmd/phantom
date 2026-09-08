@@ -47,7 +47,7 @@ func TestMasquerade404(t *testing.T) {
 
 func TestMasquerade405(t *testing.T) {
 	tmpDir := t.TempDir()
-	h, err := NewHandler(tmpDir + "/site", 100)
+	h, err := NewHandler(tmpDir+"/site", 100)
 	if err != nil {
 		t.Fatalf("NewHandler failed: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestMasquerade405(t *testing.T) {
 
 func TestMasqueradeRateLimit(t *testing.T) {
 	tmpDir := t.TempDir()
-	h, err := NewHandler(tmpDir + "/site", 5) // limit = 5
+	h, err := NewHandler(tmpDir+"/site", 5) // limit = 5
 	if err != nil {
 		t.Fatalf("NewHandler failed: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestMasqueradeRateLimit(t *testing.T) {
 
 func TestMasqueradeETag304(t *testing.T) {
 	tmpDir := t.TempDir()
-	h, err := NewHandler(tmpDir + "/site", 100)
+	h, err := NewHandler(tmpDir+"/site", 100)
 	if err != nil {
 		t.Fatalf("NewHandler failed: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestMasqueradeETag304(t *testing.T) {
 
 func TestMasqueradePathTraversal(t *testing.T) {
 	tmpDir := t.TempDir()
-	h, err := NewHandler(tmpDir + "/site", 100)
+	h, err := NewHandler(tmpDir+"/site", 100)
 	if err != nil {
 		t.Fatalf("NewHandler failed: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestMasqueradePathTraversal(t *testing.T) {
 
 func TestMasqueradeGzip(t *testing.T) {
 	tmpDir := t.TempDir()
-	h, err := NewHandler(tmpDir + "/site", 100)
+	h, err := NewHandler(tmpDir+"/site", 100)
 	if err != nil {
 		t.Fatalf("NewHandler failed: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestMasqueradeGzip(t *testing.T) {
 
 func TestMasqueradeHEAD(t *testing.T) {
 	tmpDir := t.TempDir()
-	h, err := NewHandler(tmpDir + "/site", 100)
+	h, err := NewHandler(tmpDir+"/site", 100)
 	if err != nil {
 		t.Fatalf("NewHandler failed: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestMasqueradeHEAD(t *testing.T) {
 
 func TestMasqueradeOptions(t *testing.T) {
 	tmpDir := t.TempDir()
-	h, err := NewHandler(tmpDir + "/site", 100)
+	h, err := NewHandler(tmpDir+"/site", 100)
 	if err != nil {
 		t.Fatalf("NewHandler failed: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestMasqueradeOptions(t *testing.T) {
 
 func TestMasqueradeHeaders(t *testing.T) {
 	tmpDir := t.TempDir()
-	h, err := NewHandler(tmpDir + "/site", 100)
+	h, err := NewHandler(tmpDir+"/site", 100)
 	if err != nil {
 		t.Fatalf("NewHandler failed: %v", err)
 	}

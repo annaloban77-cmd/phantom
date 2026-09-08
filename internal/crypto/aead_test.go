@@ -255,51 +255,51 @@ func TestAEADDirectionalRoundTrip(t *testing.T) {
 }
 
 func TestX25519KeyAgreement(t *testing.T) {
-// Generate key pairs for both parties
-privA, pubA, err := GenerateX25519KeyPair()
-if err != nil {
-t.Fatalf("GenerateX25519KeyPair A failed: %v", err)
-}
+	// Generate key pairs for both parties
+	privA, pubA, err := GenerateX25519KeyPair()
+	if err != nil {
+		t.Fatalf("GenerateX25519KeyPair A failed: %v", err)
+	}
 
-privB, pubB, err := GenerateX25519KeyPair()
-if err != nil {
-t.Fatalf("GenerateX25519KeyPair B failed: %v", err)
-}
+	privB, pubB, err := GenerateX25519KeyPair()
+	if err != nil {
+		t.Fatalf("GenerateX25519KeyPair B failed: %v", err)
+	}
 
-// Both parties compute shared secret
-sharedA, err := X25519(privA[:], pubB[:])
-if err != nil {
-t.Fatalf("X25519 A failed: %v", err)
-}
+	// Both parties compute shared secret
+	sharedA, err := X25519(privA[:], pubB[:])
+	if err != nil {
+		t.Fatalf("X25519 A failed: %v", err)
+	}
 
-sharedB, err := X25519(privB[:], pubA[:])
-if err != nil {
-t.Fatalf("X25519 B failed: %v", err)
-}
+	sharedB, err := X25519(privB[:], pubA[:])
+	if err != nil {
+		t.Fatalf("X25519 B failed: %v", err)
+	}
 
-// Shared secrets must match
-if !bytes.Equal(sharedA, sharedB) {
-t.Error("shared secrets do not match")
-}
+	// Shared secrets must match
+	if !bytes.Equal(sharedA, sharedB) {
+		t.Error("shared secrets do not match")
+	}
 
-// Shared secret must be 32 bytes
-if len(sharedA) != 32 {
-t.Errorf("shared secret length mismatch: got %d, want 32", len(sharedA))
-}
+	// Shared secret must be 32 bytes
+	if len(sharedA) != 32 {
+		t.Errorf("shared secret length mismatch: got %d, want 32", len(sharedA))
+	}
 }
 
 func TestX25519InvalidKeyLength(t *testing.T) {
-shortKey := make([]byte, 16)
-longKey := make([]byte, 64)
-validKey := make([]byte, 32)
+	shortKey := make([]byte, 16)
+	longKey := make([]byte, 64)
+	validKey := make([]byte, 32)
 
-if _, err := X25519(shortKey, validKey); err == nil {
-t.Error("X25519 accepted short private key")
-}
-if _, err := X25519(longKey, validKey); err == nil {
-t.Error("X25519 accepted long private key")
-}
-if _, err := X25519(validKey, shortKey); err == nil {
-t.Error("X25519 accepted short public key")
-}
+	if _, err := X25519(shortKey, validKey); err == nil {
+		t.Error("X25519 accepted short private key")
+	}
+	if _, err := X25519(longKey, validKey); err == nil {
+		t.Error("X25519 accepted long private key")
+	}
+	if _, err := X25519(validKey, shortKey); err == nil {
+		t.Error("X25519 accepted short public key")
+	}
 }

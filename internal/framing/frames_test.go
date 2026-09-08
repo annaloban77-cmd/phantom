@@ -85,7 +85,7 @@ func TestFramerHeadersFrequency(t *testing.T) {
 	if !inserted {
 		t.Fatal("ShouldInsertHeaders never returned true within 15 iterations")
 	}
-	
+
 	// After reset, should work again
 	f.dataSinceHeaders = 0
 	if !f.ShouldInsertHeaders() {
@@ -105,7 +105,7 @@ func TestFramerHeaderSize(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		headers := f.GenerateHeaders()
 		totalSize := len(headers)
-		
+
 		// Total frame size should be 9 (header) + content (50-200)
 		contentSize := totalSize - 9
 		if contentSize < 50 || contentSize > 200 {

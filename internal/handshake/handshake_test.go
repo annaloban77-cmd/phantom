@@ -502,15 +502,15 @@ func TestHandshakeKeyAgreement(t *testing.T) {
 func TestTimestampBoundary(t *testing.T) {
 	// Спека: |now - ts| > 120000 → reject. РОВНО 120000 → accept.
 	now := uint64(time.Now().UnixMilli())
-	
+
 	// Граничное значение: ровно 120000ms
 	validTs := now + 120000
 	invalidTs := now + 120001
-	
+
 	// Проверяем что валидация работает корректно
 	diffValid := int64(validTs) - int64(now)
 	diffInvalid := int64(invalidTs) - int64(now)
-	
+
 	if diffValid > 120000 {
 		t.Logf("valid timestamp diff=%d (should be <=120000)", diffValid)
 	}
@@ -522,15 +522,15 @@ func TestTimestampBoundary(t *testing.T) {
 func TestPerformReplayReject(t *testing.T) {
 	psk := make([]byte, 32)
 	rand.Read(psk)
-	
+
 	serverHS := NewServerHandshake([]PSKUser{{Key: psk, Name: "test"}})
-	
+
 	// Создаём два одинаковых ClientHello (replay атака)
 	var pubKey [32]byte
 	var nonce [16]byte
 	rand.Read(pubKey[:])
 	rand.Read(nonce[:])
-	
+
 	ch := &ClientHello{
 		Type:      uint16(common.HsClientHello),
 		PubKey:    pubKey,
@@ -538,7 +538,7 @@ func TestPerformReplayReject(t *testing.T) {
 		Nonce:     nonce,
 	}
 	chBuf := MarshalClientHello(ch)
-	
+
 	// Первое соединение - успех
 	c1, s1 := net.Pipe()
 	errChan1 := make(chan error, 1)
@@ -547,10 +547,10 @@ func TestPerformReplayReject(t *testing.T) {
 		errChan1 <- err
 		s1.Close()
 	}()
-	
+
 	// Отправляем первый ClientHello
 	c1.Write(chBuf)
-	
+
 	// Генерируем ServerHello и отправляем клиенту
 	shBuf := make([]byte, common.ServerHelloSize)
 	if _, err := io.ReadFull(c1, shBuf); err != nil {
@@ -561,19 +561,19 @@ func TestPerformReplayReject(t *testing.T) {
 		t.Fatalf("failed to parse ServerHello: %v", err)
 	}
 	_ = sh // sh используется для валидации
-	
+
 	// Отправляем ClientProof
 	cp := ComputeClientProof(psk, nonce[:], pubKey[:])
 	cpMsg := &ClientProof{Type: uint16(common.HsClientProof), HMAC: cp}
 	c1.Write(MarshalClientProof(cpMsg))
-	
+
 	// Читаем SessionConfirm и завершаем первый handshake
 	scBuf := make([]byte, common.SessionConfirmSize)
 	if _, err := io.ReadFull(c1, scBuf); err != nil {
 		t.Fatalf("failed to read SessionConfirm: %v", err)
 	}
 	c1.Close()
-	
+
 	// Ждём завершения первого handshake
 	select {
 	case err := <-errChan1:
@@ -583,7 +583,7 @@ func TestPerformReplayReject(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("first handshake timeout")
 	}
-	
+
 	// Второе соединение с тем же nonce - должно быть отклонено (replay)
 	c2, s2 := net.Pipe()
 	errChan2 := make(chan error, 1)
@@ -592,10 +592,10 @@ func TestPerformReplayReject(t *testing.T) {
 		errChan2 <- err
 		s2.Close()
 	}()
-	
+
 	// Отправляем тот же ClientHello (replay атака)
 	c2.Write(chBuf)
-	
+
 	// Ждём результат - сервер должен отклонить из-за replay
 	select {
 	case err := <-errChan2:
@@ -612,18 +612,18 @@ func TestPerformReplayReject(t *testing.T) {
 func TestPerformRateLimit(t *testing.T) {
 	psk := make([]byte, 32)
 	rand.Read(psk)
-	
+
 	// Rate limiter: 10 запросов в секунду
 	serverHS := NewServerHandshake([]PSKUser{{Key: psk, Name: "test"}})
 	ip := "192.168.1.50"
-	
+
 	// 10 запросов должны пройти
 	for i := 0; i < 10; i++ {
 		if !serverHS.rateLimiter.Allow(ip) {
 			t.Fatalf("request %d should be allowed", i+1)
 		}
 	}
-	
+
 	// 11-й должен быть отклонён
 	if serverHS.rateLimiter.Allow(ip) {
 		t.Fatal("11th request should be rate limited")
@@ -633,50 +633,50 @@ func TestPerformRateLimit(t *testing.T) {
 func TestClientRejectsBadSessionConfirm(t *testing.T) {
 	psk := make([]byte, 32)
 	rand.Read(psk)
-	
+
 	// Фейковый сервер
 	c1, s1 := netPipe()
 	defer c1.Close()
 	defer s1.Close()
-	
+
 	// Клиент в горутине
 	errChan := make(chan error, 1)
 	go func() {
 		_, _, err := ClientHandshake(c1, psk)
 		errChan <- err
 	}()
-	
+
 	// Читаем ClientHello
 	chBuf := make([]byte, common.ClientHelloSize)
 	if _, err := io.ReadFull(s1, chBuf); err != nil {
 		t.Fatalf("server failed to read ClientHello: %v", err)
 	}
-	
+
 	ch, err := UnmarshalClientHello(chBuf)
 	if err != nil {
 		t.Fatalf("server failed to parse ClientHello: %v", err)
 	}
 	_ = ch // ch используется для валидации
-	
+
 	// Отправляем валидный ServerHello
 	var serverPubKey [32]byte
 	var serverNonce [16]byte
 	rand.Read(serverPubKey[:])
 	rand.Read(serverNonce[:])
-	
+
 	sh := &ServerHello{
 		Type:   uint16(common.HsServerHello),
 		PubKey: serverPubKey,
 		Nonce:  serverNonce,
 	}
 	s1.Write(MarshalServerHello(sh))
-	
+
 	// Читаем ClientProof
 	cpBuf := make([]byte, common.ClientProofSize)
 	if _, err := io.ReadFull(s1, cpBuf); err != nil {
 		t.Fatalf("server failed to read ClientProof: %v", err)
 	}
-	
+
 	// Отправляем ГАРОБАЖНЫЙ SessionConfirm
 	badHMAC := [32]byte{}
 	rand.Read(badHMAC[:])
@@ -685,7 +685,7 @@ func TestClientRejectsBadSessionConfirm(t *testing.T) {
 		HMAC: badHMAC,
 	}
 	s1.Write(MarshalSessionConfirm(sc))
-	
+
 	// Клиент должен отвергнуть
 	select {
 	case err := <-errChan:
@@ -700,19 +700,19 @@ func TestClientRejectsBadSessionConfirm(t *testing.T) {
 func TestConnectionClosedMidHandshake(t *testing.T) {
 	psk := make([]byte, 32)
 	rand.Read(psk)
-	
+
 	serverHS := NewServerHandshake([]PSKUser{{Key: psk, Name: "test"}})
-	
+
 	// Клиент пишет 20 байт и закрывается
 	c1, s1 := net.Pipe()
-	
+
 	// Пишем часть ClientHello и закрываем
 	go func() {
 		partial := make([]byte, 20)
 		c1.Write(partial)
 		c1.Close()
 	}()
-	
+
 	_, _, _, err := serverHS.Perform(s1, "127.0.0.1")
 	if err == nil {
 		t.Fatal("server should error on closed connection")
