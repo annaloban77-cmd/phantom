@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/phantom-tunnel/phantom/internal/common"
-	utls "github.com/refraction-networking/utls"
 )
 
 func TestDialModeAInvalidAddress(t *testing.T) {
