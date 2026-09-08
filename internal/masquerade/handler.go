@@ -139,12 +139,8 @@ func (h *Handler) serveStatic(w http.ResponseWriter, r *http.Request) {
 	contentType := h.getContentType(path)
 	w.Header().Set("Content-Type", contentType)
 
-	// Check for gzip
-	acceptEncoding := r.Header.Get("Accept-Encoding")
-	if strings.Contains(acceptEncoding, "gzip") && strings.HasPrefix(contentType, "text/") {
-		w.Header().Set("Content-Encoding", "gzip")
-		// In production, would gzip here
-	}
+	// ВАЖНО: не заявляем Content-Encoding: gzip, пока сжатие реально не
+	// реализовано — клиенты попытались бы распаковать несжатый ответ.
 
 	if r.Method == http.MethodHead {
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", stat.Size()))
@@ -161,6 +157,15 @@ func (h *Handler) checkRateLimit(ip string) bool {
 
 	now := time.Now()
 	windowStart := now.Add(-time.Second)
+
+	// Периодическая очистка забытых IP, чтобы map не рос бесконечно
+	if len(h.rateLimits) > 4096 {
+		for k, v := range h.rateLimits {
+			if len(v) == 0 || v[len(v)-1].Before(windowStart) {
+				delete(h.rateLimits, k)
+			}
+		}
+	}
 
 	// Filter old entries
 	var recent []time.Time

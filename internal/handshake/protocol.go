@@ -27,6 +27,10 @@ type PSKUser struct {
 	Name string
 }
 
+// handshakeTimeout ограничивает длительность handshake, чтобы медленный
+// или зависший клиент не удерживал соединение и ресурсы навсегда
+const handshakeTimeout = 15 * time.Second
+
 // RateLimiter реализует sliding window rate limiting
 type RateLimiter struct {
 	mu       sync.Mutex
@@ -34,6 +38,10 @@ type RateLimiter struct {
 	window   time.Duration
 	limit    int
 }
+
+// pruneThreshold — при каком размере map запускается очистка забытых IP,
+// чтобы requests не рос бесконечно при большом числе уникальных адресов
+const pruneThreshold = 1024
 
 // NewRateLimiter создаёт rate limiter с окном и лимитом запросов
 func NewRateLimiter(window time.Duration, limit int) *RateLimiter {
@@ -51,6 +59,15 @@ func (rl *RateLimiter) Allow(ip string) bool {
 
 	now := time.Now()
 	cutoff := now.Add(-rl.window)
+
+	// Периодическая очистка IP, давно не присылавших запросы
+	if len(rl.requests) > pruneThreshold {
+		for k, v := range rl.requests {
+			if len(v) == 0 || v[len(v)-1].Before(cutoff) {
+				delete(rl.requests, k)
+			}
+		}
+	}
 
 	// Фильтруем старые запросы
 	var valid []time.Time
@@ -76,7 +93,6 @@ type ServerHandshake struct {
 	psks        []PSKUser
 	replay      *ReplayWindow
 	rateLimiter *RateLimiter
-	mu          sync.Mutex
 }
 
 // NewServerHandshake создаёт новый серверный handshake менеджер
@@ -91,8 +107,13 @@ func NewServerHandshake(psks []PSKUser) *ServerHandshake {
 // Perform выполняет серверную сторону handshake протокола
 // Возвращает AEAD для incoming (C2S) и outgoing (S2C) трафика
 func (h *ServerHandshake) Perform(conn io.ReadWriter, remoteIP string) (*crypto.AEAD, *crypto.AEAD, *PSKUser, error) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
+	// Ограничиваем длительность handshake дедлайном, если conn его поддерживает.
+	// Глобальной блокировки нет: psks read-only, replay и rateLimiter
+	// потокобезопасны сами по себе, поэтому параллельные handshakes не мешают друг другу.
+	if dc, ok := conn.(interface{ SetDeadline(time.Time) error }); ok {
+		_ = dc.SetDeadline(time.Now().Add(handshakeTimeout))
+		defer func() { _ = dc.SetDeadline(time.Time{}) }()
+	}
 
 	// Проверка rate limit
 	if !h.rateLimiter.Allow(remoteIP) {
@@ -277,17 +298,19 @@ func ClientHandshake(conn io.ReadWriter, psk []byte) (*crypto.AEAD, *crypto.AEAD
 	}
 
 	// Derive session keys
-	s2cKey, c2sKey, err := crypto.DeriveKeys(sharedSecret, serverHello.Nonce[:], clientNonce[:])
-	if err != nil {
-		return nil, nil, err
-	}
-
-	aeadS2C, err := crypto.NewAEAD(s2cKey)
+	// DeriveKeys возвращает (c2s, s2c): c2s — ключ клиент→сервер (совпадает
+	// с тем, чем шифрует клиент), s2c — ключ сервер→клиент
+	c2sKey, s2cKey, err := crypto.DeriveKeys(sharedSecret, serverHello.Nonce[:], clientNonce[:])
 	if err != nil {
 		return nil, nil, err
 	}
 
 	aeadC2S, err := crypto.NewAEAD(c2sKey)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	aeadS2C, err := crypto.NewAEAD(s2cKey)
 	if err != nil {
 		return nil, nil, err
 	}

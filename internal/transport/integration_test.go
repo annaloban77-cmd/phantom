@@ -2,32 +2,59 @@ package transport
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"fmt"
+	"io"
+	"math/big"
 	"net"
-	"net/http"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/phantom-tunnel/phantom/internal/common"
+	"github.com/phantom-tunnel/phantom/internal/crypto"
+	"github.com/phantom-tunnel/phantom/internal/handshake"
 	utls "github.com/refraction-networking/utls"
 )
 
-// mockTLSServer создает простой TLS сервер для тестирования
+// testTLSOptions отключает проверку self-signed сертификата mock-сервера
+func testTLSOptions() []DialOption {
+	return []DialOption{
+		WithTLSConfig(&utls.Config{
+			ServerName:         "127.0.0.1",
+			InsecureSkipVerify: true,
+		}),
+	}
+}
+
+// mockTLSServer поднимает TLS-сервер, который выполняет полный PHANTOM handshake
+// и в tunnel-режиме эхо-отвечает на зашифрованные пакеты клиента.
 type mockTLSServer struct {
-	listener net.Listener
-	server   *http.Server
-	psk      []byte
-	mu       sync.Mutex
-	lastErr  error
+	listener   net.Listener
+	psk        []byte
+	badConfirm bool
 }
 
 func newMockTLSServer(psk []byte) (*mockTLSServer, error) {
-	cert, err := tls.X509KeyPair([]byte(testCertPEM), []byte(testKeyPEM))
+	return newMockTLSServerOpts(psk, false)
+}
+
+// newMockTLSServerBadConfirm возвращает сервер, который отправляет
+// заведомо неверный SessionConfirm — клиент обязан отвергнуть handshake
+func newMockTLSServerBadConfirm(psk []byte) (*mockTLSServer, error) {
+	return newMockTLSServerOpts(psk, true)
+}
+
+func newMockTLSServerOpts(psk []byte, badConfirm bool) (*mockTLSServer, error) {
+	cert, err := generateSelfSignedCert()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("generate cert: %w", err)
 	}
 
 	tlsConfig := &tls.Config{
@@ -41,36 +68,173 @@ func newMockTLSServer(psk []byte) (*mockTLSServer, error) {
 	}
 
 	s := &mockTLSServer{
-		listener: listener,
-		psk:      psk,
+		listener:   listener,
+		psk:        psk,
+		badConfirm: badConfirm,
 	}
 
-	s.server = &http.Server{
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Mock handler - just accepts connection
-			w.WriteHeader(http.StatusOK)
-		}),
-		TLSConfig: tlsConfig,
-	}
-
-	go func() {
-		if err := s.server.Serve(s.listener); err != nil && err != http.ErrServerClosed {
-			s.mu.Lock()
-			s.lastErr = err
-			s.mu.Unlock()
-		}
-	}()
-
+	go s.serve()
 	return s, nil
 }
 
-func (s *mockTLSServer) Close() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	
-	if err := s.server.Shutdown(ctx); err != nil {
-		return err
+// generateSelfSignedCert создаёт валидную self-signed пару ключей на лету.
+// Статические PEM-константы не используются: их легко повредить при копировании,
+// а сертификат со фиксированным сроком действия со временем истекает.
+func generateSelfSignedCert() (tls.Certificate, error) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return tls.Certificate{}, err
 	}
+
+	tmpl := x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{Organization: []string{"Phantom Test"}},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		DNSNames:              []string{"localhost"},
+		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
+	}
+
+	der, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, &key.PublicKey, key)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+
+	return tls.X509KeyPair(certPEM, keyPEM)
+}
+
+func (s *mockTLSServer) serve() {
+	for {
+		conn, err := s.listener.Accept()
+		if err != nil {
+			return
+		}
+		go func(c net.Conn) {
+			defer c.Close()
+			s.handleConn(c)
+		}(conn)
+	}
+}
+
+func (s *mockTLSServer) handleConn(conn net.Conn) {
+	conn.SetDeadline(time.Now().Add(30 * time.Second))
+
+	if s.badConfirm {
+		s.runBadConfirmHandshake(conn)
+		return
+	}
+
+	hs := handshake.NewServerHandshake([]handshake.PSKUser{{Key: s.psk, Name: "test"}})
+	aeadRx, aeadTx, _, err := hs.Perform(conn, conn.RemoteAddr().String())
+	if err != nil {
+		return
+	}
+
+	// Снимаем дедлайн handshake: туннель долгоживущий
+	conn.SetDeadline(time.Time{})
+
+	// Echo loop: читаем зашифрованный фрейм, расшифровываем и эхо-отвечаем
+	for {
+		lengthBuf := make([]byte, 4)
+		if _, err := io.ReadFull(conn, lengthBuf); err != nil {
+			return
+		}
+		length := int(lengthBuf[0])<<24 | int(lengthBuf[1])<<16 | int(lengthBuf[2])<<8 | int(lengthBuf[3])
+		if length <= 0 || length > common.MaxPacketSize-4 {
+			return
+		}
+
+		ciphertext := make([]byte, length)
+		if _, err := io.ReadFull(conn, ciphertext); err != nil {
+			return
+		}
+
+		plaintext, err := aeadRx.Open(ciphertext)
+		if err != nil {
+			return
+		}
+		if len(plaintext) < 1 {
+			return
+		}
+
+		// Эхо: тот же msgType+payload, шифруем исходящим (S2C) ключом сервера
+		reply, err := aeadTx.Seal(plaintext)
+		if err != nil {
+			return
+		}
+
+		frame := make([]byte, 4+len(reply))
+		frame[0] = byte(len(reply) >> 24)
+		frame[1] = byte(len(reply) >> 16)
+		frame[2] = byte(len(reply) >> 8)
+		frame[3] = byte(len(reply))
+		copy(frame[4:], reply)
+
+		if _, err := conn.Write(frame); err != nil {
+			return
+		}
+	}
+}
+
+// runBadConfirmHandshake выполняет handshake, но отправляет неверный SessionConfirm
+func (s *mockTLSServer) runBadConfirmHandshake(conn net.Conn) {
+	chBuf := make([]byte, common.ClientHelloSize)
+	if _, err := io.ReadFull(conn, chBuf); err != nil {
+		return
+	}
+	ch, err := handshake.UnmarshalClientHello(chBuf)
+	if err != nil {
+		return
+	}
+
+	serverPriv, serverPub, err := crypto.GenerateX25519KeyPair()
+	if err != nil {
+		return
+	}
+	if _, err := crypto.X25519(serverPriv[:], ch.PubKey[:]); err != nil {
+		return
+	}
+
+	var serverNonce [16]byte
+	if _, err := rand.Read(serverNonce[:]); err != nil {
+		return
+	}
+
+	sh := &handshake.ServerHello{
+		Type:   uint16(common.HsServerHello),
+		PubKey: serverPub,
+		Nonce:  serverNonce,
+	}
+	if _, err := conn.Write(handshake.MarshalServerHello(sh)); err != nil {
+		return
+	}
+
+	cpBuf := make([]byte, common.ClientProofSize)
+	if _, err := io.ReadFull(conn, cpBuf); err != nil {
+		return
+	}
+
+	var badHMAC [32]byte
+	sc := &handshake.SessionConfirm{Type: uint16(common.HsSessionConfirm), HMAC: badHMAC}
+	if _, err := conn.Write(handshake.MarshalSessionConfirm(sc)); err != nil {
+		return
+	}
+
+	// Держим соединение открытым, пока клиент не прочитает confirm и не отвергнет его
+	time.Sleep(2 * time.Second)
+}
+
+func (s *mockTLSServer) Close() error {
 	return s.listener.Close()
 }
 
@@ -98,7 +262,7 @@ func TestDialModeAFullHandshake(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UTLSIdToSpec failed: %v", err)
 	}
-	conn, err := DialModeA(ctx, server.Addr(), psk, &spec)
+	conn, err := DialModeA(ctx, server.Addr(), psk, &spec, testTLSOptions()...)
 	if err != nil {
 		t.Fatalf("DialModeA failed: %v", err)
 	}
@@ -144,7 +308,7 @@ func TestDialModeAMultipleMessages(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UTLSIdToSpec failed: %v", err)
 	}
-	conn, err := DialModeA(ctx, server.Addr(), psk, &spec)
+	conn, err := DialModeA(ctx, server.Addr(), psk, &spec, testTLSOptions()...)
 	if err != nil {
 		t.Fatalf("DialModeA failed: %v", err)
 	}
@@ -177,7 +341,10 @@ func TestDialModeAMultipleMessages(t *testing.T) {
 	}
 }
 
-// TestDialModeAConcurrentAccess проверяет потокобезопасность
+// TestDialModeAConcurrentAccess проверяет потокобезопасность Write/Read:
+// N горутин пишут одновременно, затем сверяем, что все N эхо дошли.
+// Порядок эхо не определён (зависит от того, в каком порядке сервер принял
+// фреймы), поэтому сравниваем множества, а не пары по порядку.
 func TestDialModeAConcurrentAccess(t *testing.T) {
 	psk := make([]byte, 32)
 	if _, err := rand.Read(psk); err != nil {
@@ -197,47 +364,56 @@ func TestDialModeAConcurrentAccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UTLSIdToSpec failed: %v", err)
 	}
-	conn, err := DialModeA(ctx, server.Addr(), psk, &spec)
+	conn, err := DialModeA(ctx, server.Addr(), psk, &spec, testTLSOptions()...)
 	if err != nil {
 		t.Fatalf("DialModeA failed: %v", err)
 	}
 	defer conn.Close()
 
+	const n = 10
 	var wg sync.WaitGroup
-	errors := make(chan error, 10)
+	errs := make(chan error, n)
 
-	for i := 0; i < 10; i++ {
+	for i := 0; i < n; i++ {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
 			msg := fmt.Sprintf("concurrent message %d", id)
 			if err := conn.Write(common.MsgData, []byte(msg)); err != nil {
-				errors <- fmt.Errorf("goroutine %d write error: %w", id, err)
-				return
-			}
-
-			msgType, data, err := conn.Read()
-			if err != nil {
-				errors <- fmt.Errorf("goroutine %d read error: %w", id, err)
-				return
-			}
-
-			if msgType != common.MsgData {
-				errors <- fmt.Errorf("goroutine %d: expected MsgData, got %v", id, msgType)
-				return
-			}
-
-			if string(data) != msg {
-				errors <- fmt.Errorf("goroutine %d: message mismatch", id)
+				errs <- fmt.Errorf("goroutine %d write error: %w", id, err)
 			}
 		}(i)
 	}
-
 	wg.Wait()
-	close(errors)
+	close(errs)
 
-	for err := range errors {
+	for err := range errs {
 		t.Error(err)
+	}
+
+	// Все n сообщений должны вернуться эхом, каждое ровно один раз
+	expected := make(map[string]bool)
+	for i := 0; i < n; i++ {
+		expected[fmt.Sprintf("concurrent message %d", i)] = true
+	}
+
+	for i := 0; i < n; i++ {
+		msgType, data, err := conn.Read()
+		if err != nil {
+			t.Fatalf("read echo %d failed: %v", i, err)
+		}
+		if msgType != common.MsgData {
+			t.Errorf("echo %d: expected MsgData, got %v", i, msgType)
+		}
+		if !expected[string(data)] {
+			t.Errorf("echo %d: unexpected or duplicate message %q", i, data)
+			continue
+		}
+		delete(expected, string(data))
+	}
+
+	if len(expected) != 0 {
+		t.Errorf("missing %d echo messages", len(expected))
 	}
 }
 
@@ -261,7 +437,7 @@ func TestDialModeALargeData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UTLSIdToSpec failed: %v", err)
 	}
-	conn, err := DialModeA(ctx, server.Addr(), psk, &spec)
+	conn, err := DialModeA(ctx, server.Addr(), psk, &spec, testTLSOptions()...)
 	if err != nil {
 		t.Fatalf("DialModeA failed: %v", err)
 	}
@@ -316,20 +492,21 @@ func TestDialModeAWrongPSK(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UTLSIdToSpec failed: %v", err)
 	}
-	_, err = DialModeA(ctx, server.Addr(), wrongPSK, &spec)
+	_, err = DialModeA(ctx, server.Addr(), wrongPSK, &spec, testTLSOptions()...)
 	if err == nil {
 		t.Fatal("expected error with wrong PSK, got nil")
 	}
 }
 
-// TestDialModeABadSessionConfirm проверяет отклонение при неправильном подтверждении
+// TestDialModeABadSessionConfirm проверяет, что клиент отвергает
+// неверный SessionConfirm (подмена/компрометация сервера)
 func TestDialModeABadSessionConfirm(t *testing.T) {
 	psk := make([]byte, 32)
 	if _, err := rand.Read(psk); err != nil {
 		t.Fatal(err)
 	}
 
-	server, err := newMockTLSServer(psk)
+	server, err := newMockTLSServerBadConfirm(psk)
 	if err != nil {
 		t.Fatalf("failed to create mock server: %v", err)
 	}
@@ -342,15 +519,9 @@ func TestDialModeABadSessionConfirm(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UTLSIdToSpec failed: %v", err)
 	}
-	conn, err := DialModeA(ctx, server.Addr(), psk, &spec)
-	if err != nil {
-		t.Fatalf("DialModeA failed: %v", err)
-	}
-	defer conn.Close()
-
-	// Проверяем что соединение закрыто после неудачного handshake
-	if err := conn.Write(common.MsgData, []byte("test")); err == nil {
-		t.Error("expected error after bad session confirm")
+	_, err = DialModeA(ctx, server.Addr(), psk, &spec, testTLSOptions()...)
+	if err == nil {
+		t.Fatal("expected handshake failure with bad SessionConfirm")
 	}
 }
 
@@ -374,7 +545,7 @@ func TestDialModeAMessageTypes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UTLSIdToSpec failed: %v", err)
 	}
-	conn, err := DialModeA(ctx, server.Addr(), psk, &spec)
+	conn, err := DialModeA(ctx, server.Addr(), psk, &spec, testTLSOptions()...)
 	if err != nil {
 		t.Fatalf("DialModeA failed: %v", err)
 	}
@@ -427,7 +598,7 @@ func TestDialModeAClose(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UTLSIdToSpec failed: %v", err)
 	}
-	conn, err := DialModeA(ctx, server.Addr(), psk, &spec)
+	conn, err := DialModeA(ctx, server.Addr(), psk, &spec, testTLSOptions()...)
 	if err != nil {
 		t.Fatalf("DialModeA failed: %v", err)
 	}
@@ -462,7 +633,7 @@ func TestPacketRoundTripWithMock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UTLSIdToSpec failed: %v", err)
 	}
-	conn, err := DialModeA(ctx, server.Addr(), psk, &spec)
+	conn, err := DialModeA(ctx, server.Addr(), psk, &spec, testTLSOptions()...)
 	if err != nil {
 		t.Fatalf("DialModeA failed: %v", err)
 	}
@@ -507,7 +678,7 @@ func TestPacketTooLargeWithMock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UTLSIdToSpec failed: %v", err)
 	}
-	conn, err := DialModeA(ctx, server.Addr(), psk, &spec)
+	conn, err := DialModeA(ctx, server.Addr(), psk, &spec, testTLSOptions()...)
 	if err != nil {
 		t.Fatalf("DialModeA failed: %v", err)
 	}
@@ -534,27 +705,8 @@ func TestDialModeAConnectionRefused(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UTLSIdToSpec failed: %v", err)
 	}
-	_, err2 := DialModeA(ctx, "127.0.0.1:1", psk, &spec) // Порт 1 обычно закрыт
-	if err2 == nil {
-		t.Fatal("expected err2or for connection refused")
+	_, err = DialModeA(ctx, "127.0.0.1:1", psk, &spec, testTLSOptions()...) // Порт 1 обычно закрыт
+	if err == nil {
+		t.Fatal("expected error for connection refused")
 	}
 }
-
-// Тестовые сертификаты для mock сервера
-const testCertPEM = `-----BEGIN CERTIFICATE-----
-MIIBhTCCASugAwIBAgIQIRi6zePL6mKjOipn+dNuaTAKBggqhkjOPQQDAjASMRAw
-DgYDVQQKEwdBY21lIENvMB4XDTE3MTAyMDE5NDMwNloXDTE4MTAyMDE5NDMwNlow
-EjEQMA4GA1UEChMHQWNtZSBDbzBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABD0d
-7VNhbWvBTpU8X2KuxGYtFfBxn5BxUKCWGBgHJJSFJrQpMJ+ckKWmTcTDKXeYvRZ8
-bPuOYvVBNmC4aL7X+6ujUDBOMB0GA1UdJQQWMBQGCCsGAQUFBwMBBggrBgEFBQcD
-AjAPBgNVHRMBAf8EBTADAQH/MA4GA1UdDwEB/wQEAwIFoDAdBgNVHQ4EFgQUu8UK
-VH0yVTDoKDnmbzN5dGVOZaowCgYIKoZIzj0EAwIDSAAwRQIhAJpJ4P2lwn+6l2FN
-FPmCKeGzFxAN3j8XGcJkPR3bS8GJAiB3MxLzHlMVrXnYCPj1lN7X3b3m8dLlVGNz
-kQxGz2cJhw==
------END CERTIFICATE-----`
-
-const testKeyPEM = `-----BEGIN EC PRIVATE KEY-----
-MHcCAQEEIIkY+6l2FNFPmCKeGzFxAN3j8XGcJkPR3bS8GJoAoGCCqGSM49AwEH
-oUQDQgAEPR3tU2Fta8FOlTxfYq7EZi0V8HGfkHFQoJYYGAcElIUmtCkwk5yQpaZN
-xMMpd5i9Fnxt+45i9UE2YLhovtf7qw==
------END EC PRIVATE KEY-----`

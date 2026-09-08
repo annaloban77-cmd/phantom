@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/phantom-tunnel/phantom/internal/common"
+	"github.com/phantom-tunnel/phantom/internal/crypto"
 )
 
 func TestMessagesRoundTrip(t *testing.T) {
@@ -434,20 +435,25 @@ func TestUnmarshalTruncatedAndOversized(t *testing.T) {
 }
 
 func TestHandshakeKeyAgreement(t *testing.T) {
-	// КРИТИЧНЕЙШИЙ тест: проверяет Wiring ключей end-to-end
+	// КРИТИЧНЕЙШИЙ тест: проверяет Wiring ключей end-to-end.
+	// Клиент должен шифровать ключом, которым расшифровывает сервер (C2S),
+	// и наоборот (S2C) — простая проверка на non-nil это не ловит.
 	c1, c2 := netPipe()
+	defer c1.Close()
+	defer c2.Close()
+
 	psk := make([]byte, 32)
 	rand.Read(psk)
 
-	var sC2S, sS2C interface{}
+	var sC2S, sS2C *crypto.AEAD
 	var sErr error
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		srv := NewServerHandshake([]PSKUser{{Key: psk, Name: "u1"}})
-		c2s, s2c, _, err := srv.Perform(c2, "127.0.0.1")
-		sC2S = c2s
-		sS2C = s2c
+		aeadC2S, aeadS2C, _, err := srv.Perform(c2, "127.0.0.1")
+		sC2S = aeadC2S
+		sS2C = aeadS2C
 		sErr = err
 	}()
 	cTx, cRx, cErr := ClientHandshake(c1, psk)
@@ -462,6 +468,34 @@ func TestHandshakeKeyAgreement(t *testing.T) {
 	}
 	if sC2S == nil || sS2C == nil {
 		t.Fatal("server AEADs should not be nil")
+	}
+
+	// Wiring C2S: шифровка клиента (cTx) обязана открываться на сервере (sC2S)
+	probe := []byte("c2s wiring probe")
+	sealed, err := cTx.Seal(probe)
+	if err != nil {
+		t.Fatalf("client seal failed: %v", err)
+	}
+	got, err := sC2S.Open(sealed)
+	if err != nil {
+		t.Fatalf("C2S key wiring broken: server cannot open client ciphertext: %v", err)
+	}
+	if !bytes.Equal(got, probe) {
+		t.Fatal("C2S round-trip mismatch")
+	}
+
+	// Wiring S2C: шифровка сервера (sS2C) обязана открываться у клиента (cRx)
+	probe2 := []byte("s2c wiring probe")
+	sealed2, err := sS2C.Seal(probe2)
+	if err != nil {
+		t.Fatalf("server seal failed: %v", err)
+	}
+	got2, err := cRx.Open(sealed2)
+	if err != nil {
+		t.Fatalf("S2C key wiring broken: client cannot open server ciphertext: %v", err)
+	}
+	if !bytes.Equal(got2, probe2) {
+		t.Fatal("S2C round-trip mismatch")
 	}
 }
 

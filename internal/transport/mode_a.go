@@ -18,15 +18,37 @@ import (
 )
 
 type ModeAConn struct {
-	tlsConn   *utls.UConn
-	aeadTx    *crypto.AEAD
-	aeadRx    *crypto.AEAD
-	mu        sync.Mutex
-	closed    bool
-	readMu    sync.Mutex
+	tlsConn *utls.UConn
+	aeadTx  *crypto.AEAD
+	aeadRx  *crypto.AEAD
+	mu      sync.Mutex
+	closed  bool
+	readMu  sync.Mutex
 }
 
-func DialModeA(ctx context.Context, addr string, psk []byte, spec *utls.ClientHelloSpec) (*ModeAConn, error) {
+// handshakeTimeout ограничивает длительность phantom handshake,
+// чтобы зависший/молчащий сервер не блокировал клиента навсегда
+const handshakeTimeout = 15 * time.Second
+
+// DialOption настраивает дополнительные параметры DialModeA
+type DialOption func(*dialConfig)
+
+type dialConfig struct {
+	tlsConfig *utls.Config
+}
+
+// WithTLSConfig переопределяет конфиг uTLS-клиента (RootCAs, InsecureSkipVerify и т.п.).
+// ServerName проставляется из addr, если не задан в конфиге.
+func WithTLSConfig(cfg *utls.Config) DialOption {
+	return func(d *dialConfig) { d.tlsConfig = cfg }
+}
+
+func DialModeA(ctx context.Context, addr string, psk []byte, spec *utls.ClientHelloSpec, opts ...DialOption) (*ModeAConn, error) {
+	dc := &dialConfig{}
+	for _, opt := range opts {
+		opt(dc)
+	}
+
 	// 1. TCP dial
 	netConn, err := net.DialTimeout("tcp", addr, 10*time.Second)
 	if err != nil {
@@ -34,13 +56,27 @@ func DialModeA(ctx context.Context, addr string, psk []byte, spec *utls.ClientHe
 	}
 
 	// 2. TLS handshake with utls
-	tlsConn := utls.UClient(netConn, &utls.Config{
-		ServerName: getServerName(addr),
-	}, utls.HelloCustom)
+	var tlsCfg *utls.Config
+	if dc.tlsConfig != nil {
+		tlsCfg = dc.tlsConfig.Clone()
+	} else {
+		tlsCfg = &utls.Config{}
+	}
+	if tlsCfg.ServerName == "" {
+		tlsCfg.ServerName = getServerName(addr)
+	}
 
-	if err := tlsConn.ApplyPreset(spec); err != nil {
-		netConn.Close()
-		return nil, fmt.Errorf("apply preset: %w", err)
+	helloID := utls.HelloCustom
+	if spec == nil {
+		helloID = utls.HelloChrome_Auto
+	}
+	tlsConn := utls.UClient(netConn, tlsCfg, helloID)
+
+	if spec != nil {
+		if err := tlsConn.ApplyPreset(spec); err != nil {
+			netConn.Close()
+			return nil, fmt.Errorf("apply preset: %w", err)
+		}
 	}
 
 	if err := tlsConn.HandshakeContext(ctx); err != nil {
@@ -48,8 +84,10 @@ func DialModeA(ctx context.Context, addr string, psk []byte, spec *utls.ClientHe
 		return nil, fmt.Errorf("tls handshake: %w", err)
 	}
 
-	// 3. PHANTOM handshake inside TLS
+	// 3. PHANTOM handshake inside TLS (под дедлайном)
+	tlsConn.SetDeadline(time.Now().Add(handshakeTimeout))
 	aeadTx, aeadRx, err := performClientHandshake(tlsConn, psk)
+	tlsConn.SetDeadline(time.Time{})
 	if err != nil {
 		tlsConn.Close()
 		return nil, fmt.Errorf("handshake: %w", err)
